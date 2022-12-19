@@ -40,3 +40,4 @@ include::511_25857_response.json[]
 
 * extendedData1: SOC
 * extendedData2: 0: not charging, 1: charging
+* remoteClimateStatus: 0: off, 2: A/C on, 5: Frontwindow on

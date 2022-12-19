@@ -4,6 +4,8 @@ import net.heberling.ismart.asn1.AbstractMessageCoderTest;
 import net.heberling.ismart.asn1.v2_1.entity.MP_SecurityAlarmResp;
 import net.heberling.ismart.asn1.v2_1.entity.OTA_RVCReq;
 import net.heberling.ismart.asn1.v2_1.entity.OTA_RVCStatus25857;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleClassifiedStatusReq;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleClassifiedStatusResp25857;
 import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleStatusReq;
 import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleStatusResp25857;
 import org.bn.coders.IASN1PreparedElement;
@@ -44,6 +46,20 @@ class MessageCoderTest extends AbstractMessageCoderTest {
     void decodeEncodeResponse_511() {
 
         decodeEncode("511_25857_response", new MessageCoder<>(OTA_RVMVehicleStatusResp25857.class));
+    }
+
+    @Test
+    void decodeEncodeRequest_511_11() {
+        decodeEncode(
+                "511_25857_request_11",
+                new MessageCoder<>(OTA_RVMVehicleClassifiedStatusReq.class));
+    }
+
+    @Test
+    void decodeEncodeResponse_511_11() {
+        decodeEncode(
+                "511_25857_response_11",
+                new MessageCoder<>(OTA_RVMVehicleClassifiedStatusResp25857.class));
     }
 
     @Test

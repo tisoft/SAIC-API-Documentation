@@ -49,6 +49,7 @@ public class UTF8StringObjectWriter implements ObjectWriter {
                 || nameString.equals("title")
                 || nameString.equals("errorMessage")
                 || nameString.equals("rvcReqType")
+                || nameString.equals("rvmClassifiedType")
                 || nameString.equals("paramValue")) {
             // Some fields are really UTF8 strings, but the ASN.1 schema declares them as byte
             // arrays. We want to see the plain text additionally to the HEX String in the JSON

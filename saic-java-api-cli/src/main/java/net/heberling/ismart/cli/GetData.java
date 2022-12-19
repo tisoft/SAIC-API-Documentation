@@ -11,6 +11,8 @@ import com.owlike.genson.stream.ObjectWriter;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import net.heberling.ismart.asn1.AbstractMessage;
 import net.heberling.ismart.asn1.AbstractMessageCoder;
@@ -20,7 +22,11 @@ import net.heberling.ismart.asn1.v1_1.MessageCoder;
 import net.heberling.ismart.asn1.v1_1.entity.MP_UserLoggingInReq;
 import net.heberling.ismart.asn1.v1_1.entity.MP_UserLoggingInResp;
 import net.heberling.ismart.asn1.v1_1.entity.VinInfo;
-import net.heberling.ismart.asn1.v3_0.entity.OTA_ChrgMangDataResp;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVCReq;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVCStatus25857;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleClassifiedStatusReq;
+import net.heberling.ismart.asn1.v2_1.entity.OTA_RVMVehicleClassifiedStatusResp25857;
+import net.heberling.ismart.asn1.v2_1.entity.RvcReqParam;
 import org.apache.hc.client5.http.ClientProtocolException;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -70,90 +76,283 @@ public class GetData {
                                 new MessageCoder<>(MP_UserLoggingInResp.class),
                                 loginResponseMessage)));
         for (VinInfo vin : loginResponseMessage.getApplicationData().getVinList()) {
-            net.heberling.ismart.asn1.v3_0.MessageCoder<IASN1PreparedElement>
-                    chargingStatusRequestMessageEncoder =
-                            new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                    IASN1PreparedElement.class);
 
-            net.heberling.ismart.asn1.v3_0.Message<IASN1PreparedElement> chargingStatusMessage =
-                    chargingStatusRequestMessageEncoder.initializeMessage(
-                            loginResponseMessage.getBody().getUid(),
-                            loginResponseMessage.getApplicationData().getToken(),
-                            vin.getVin(),
-                            "516",
-                            768,
-                            5,
-                            null);
-            ;
+            fetchVehicleClassifiedStatus(loginResponseMessage, vin);
+            // 5 front, 2, a/c, 0 disable
+            // sendACCommand(loginResponseMessage, vin, (byte) 5, (byte) 8);
+            // sendACCommand(loginResponseMessage, vin, (byte)0, (byte)0);
+            sendLockCommand(loginResponseMessage, vin, false);
+        }
+    }
 
-            String chargingStatusRequestMessage =
-                    new net.heberling.ismart.asn1.v3_0.MessageCoder<>(IASN1PreparedElement.class)
-                            .encodeRequest(chargingStatusMessage);
+    private static void sendACCommand(
+            Message<MP_UserLoggingInResp> loginResponseMessage,
+            VinInfo vin,
+            byte command,
+            byte temperature)
+            throws IOException {
+        net.heberling.ismart.asn1.v2_1.MessageCoder<OTA_RVCReq> otaRvcReqMessageCoder =
+                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCReq.class);
 
-            System.out.println(
-                    toJSON(
-                            anonymized(
-                                    new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                            IASN1PreparedElement.class),
-                                    chargingStatusMessage)));
+        OTA_RVCReq req = new OTA_RVCReq();
+        req.setRvcReqType(new byte[] {6});
+        List<RvcReqParam> params = new ArrayList<>();
+        req.setRvcParams(params);
+        RvcReqParam param = new RvcReqParam();
+        param.setParamId(19);
+        param.setParamValue(new byte[] {command});
+        params.add(param);
+        param = new RvcReqParam();
+        param.setParamId(20);
+        param.setParamValue(new byte[] {temperature});
+        params.add(param);
+        param = new RvcReqParam();
+        param.setParamId(255);
+        param.setParamValue(new byte[] {0});
+        params.add(param);
 
-            String chargingStatusResponse =
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVCReq> enableACRequest =
+                otaRvcReqMessageCoder.initializeMessage(
+                        loginResponseMessage.getBody().getUid(),
+                        loginResponseMessage.getApplicationData().getToken(),
+                        vin.getVin(),
+                        "510",
+                        25857,
+                        1,
+                        req);
+        fillReserved(enableACRequest.getReserved());
+
+        String enableACRequestMessage = otaRvcReqMessageCoder.encodeRequest(enableACRequest);
+
+        System.out.println(toJSON(anonymized(otaRvcReqMessageCoder, enableACRequest)));
+
+        String enableACResponseMessage =
+                sendRequest(enableACRequestMessage, "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
+
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVCStatus25857> enableACResponse =
+                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCStatus25857.class)
+                        .decodeResponse(enableACResponseMessage);
+
+        System.out.println(
+                toJSON(
+                        anonymized(
+                                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                        OTA_RVCStatus25857.class),
+                                enableACResponse)));
+
+        // ... use that to request the data again, until we have it
+        // TODO: check for real errors (result!=0 and/or errorMessagePresent)
+        while (enableACResponse.getApplicationData() == null) {
+
+            fillReserved(enableACRequest.getReserved());
+
+            if (enableACResponse.getBody().getResult() == 0) {
+                // we get an eventId back...
+                enableACRequest.getBody().setEventID(enableACResponse.getBody().getEventID());
+            } else {
+                // try a fresh eventId
+                enableACRequest.getBody().setEventID(0);
+            }
+
+            System.out.println(toJSON(anonymized(otaRvcReqMessageCoder, enableACRequest)));
+
+            enableACRequestMessage = otaRvcReqMessageCoder.encodeRequest(enableACRequest);
+
+            enableACResponseMessage =
                     sendRequest(
-                            chargingStatusRequestMessage,
-                            "https://tap-eu.soimt.com/TAP.Web/ota.mpv30");
+                            enableACRequestMessage, "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
 
-            net.heberling.ismart.asn1.v3_0.Message<OTA_ChrgMangDataResp>
-                    chargingStatusResponseMessage =
-                            new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                            OTA_ChrgMangDataResp.class)
-                                    .decodeResponse(chargingStatusResponse);
+            enableACResponse =
+                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCStatus25857.class)
+                            .decodeResponse(enableACResponseMessage);
 
             System.out.println(
                     toJSON(
                             anonymized(
-                                    new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                            OTA_ChrgMangDataResp.class),
-                                    chargingStatusResponseMessage)));
+                                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                            OTA_RVCStatus25857.class),
+                                    enableACResponse)));
+        }
+    }
+    private static void sendLockCommand(
+            Message<MP_UserLoggingInResp> loginResponseMessage,
+            VinInfo vin,
+            boolean lock)
+            throws IOException {
+        net.heberling.ismart.asn1.v2_1.MessageCoder<OTA_RVCReq> otaRvcReqMessageCoder =
+                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCReq.class);
 
-            // we get an eventId back...
-            chargingStatusMessage
-                    .getBody()
-                    .setEventID(chargingStatusResponseMessage.getBody().getEventID());
-            // ... use that to request the data again, until we have it
-            // TODO: check for real errors (result!=0 and/or errorMessagePresent)
-            while (chargingStatusResponseMessage.getApplicationData() == null) {
+        OTA_RVCReq req = new OTA_RVCReq();
+        req.setRvcReqType(new byte[] {6});
+        List<RvcReqParam> params = new ArrayList<>();
+        req.setRvcParams(params);
+        RvcReqParam param = new RvcReqParam();
+        param.setParamId(19);
+        param.setParamValue(new byte[] {command});
+        params.add(param);
+        param = new RvcReqParam();
+        param.setParamId(20);
+        param.setParamValue(new byte[] {temperature});
+        params.add(param);
+        param = new RvcReqParam();
+        param.setParamId(255);
+        param.setParamValue(new byte[] {0});
+        params.add(param);
 
-                fillReserved(chargingStatusMessage);
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVCReq> enableACRequest =
+                otaRvcReqMessageCoder.initializeMessage(
+                        loginResponseMessage.getBody().getUid(),
+                        loginResponseMessage.getApplicationData().getToken(),
+                        vin.getVin(),
+                        "510",
+                        25857,
+                        1,
+                        req);
+        fillReserved(enableACRequest.getReserved());
 
-                System.out.println(
-                        toJSON(
-                                anonymized(
-                                        new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                                IASN1PreparedElement.class),
-                                        chargingStatusMessage)));
+        String enableACRequestMessage = otaRvcReqMessageCoder.encodeRequest(enableACRequest);
 
-                chargingStatusRequestMessage =
-                        new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                        IASN1PreparedElement.class)
-                                .encodeRequest(chargingStatusMessage);
+        System.out.println(toJSON(anonymized(otaRvcReqMessageCoder, enableACRequest)));
 
-                chargingStatusResponse =
-                        sendRequest(
-                                chargingStatusRequestMessage,
-                                "https://tap-eu.soimt.com/TAP.Web/ota.mpv30");
+        String enableACResponseMessage =
+                sendRequest(enableACRequestMessage, "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
 
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVCStatus25857> enableACResponse =
+                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCStatus25857.class)
+                        .decodeResponse(enableACResponseMessage);
+
+        System.out.println(
+                toJSON(
+                        anonymized(
+                                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                        OTA_RVCStatus25857.class),
+                                enableACResponse)));
+
+        // ... use that to request the data again, until we have it
+        // TODO: check for real errors (result!=0 and/or errorMessagePresent)
+        while (enableACResponse.getApplicationData() == null) {
+
+            fillReserved(enableACRequest.getReserved());
+
+            if (enableACResponse.getBody().getResult() == 0) {
+                // we get an eventId back...
+                enableACRequest.getBody().setEventID(enableACResponse.getBody().getEventID());
+            } else {
+                // try a fresh eventId
+                enableACRequest.getBody().setEventID(0);
+            }
+
+            System.out.println(toJSON(anonymized(otaRvcReqMessageCoder, enableACRequest)));
+
+            enableACRequestMessage = otaRvcReqMessageCoder.encodeRequest(enableACRequest);
+
+            enableACResponseMessage =
+                    sendRequest(
+                            enableACRequestMessage, "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
+
+            enableACResponse =
+                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCStatus25857.class)
+                            .decodeResponse(enableACResponseMessage);
+
+            System.out.println(
+                    toJSON(
+                            anonymized(
+                                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                            OTA_RVCStatus25857.class),
+                                    enableACResponse)));
+        }
+    }
+    private static void fetchVehicleClassifiedStatus(
+            Message<MP_UserLoggingInResp> loginResponseMessage, VinInfo vin) throws IOException {
+        net.heberling.ismart.asn1.v2_1.MessageCoder<OTA_RVMVehicleClassifiedStatusReq>
+                otaRvmVehicleClassifiedStatusReqMessageCoder =
+                        new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                OTA_RVMVehicleClassifiedStatusReq.class);
+
+        OTA_RVMVehicleClassifiedStatusReq req = new OTA_RVMVehicleClassifiedStatusReq();
+        req.setVehStatusReqType(0);
+        req.setRvmClassifiedType(new byte[] {1});
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVMVehicleClassifiedStatusReq>
+                chargingStatusMessage =
+                        otaRvmVehicleClassifiedStatusReqMessageCoder.initializeMessage(
+                                loginResponseMessage.getBody().getUid(),
+                                loginResponseMessage.getApplicationData().getToken(),
+                                vin.getVin(),
+                                "511",
+                                25857,
+                                11,
+                                req);
+
+        chargingStatusMessage.getHeader().setProtocolVersion(32);
+
+        String chargingStatusRequestMessage =
+                otaRvmVehicleClassifiedStatusReqMessageCoder.encodeRequest(chargingStatusMessage);
+
+        System.out.println(
+                toJSON(
+                        anonymized(
+                                otaRvmVehicleClassifiedStatusReqMessageCoder,
+                                chargingStatusMessage)));
+
+        String chargingStatusResponse =
+                sendRequest(
+                        chargingStatusRequestMessage, "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
+
+        net.heberling.ismart.asn1.v2_1.Message<OTA_RVMVehicleClassifiedStatusResp25857>
                 chargingStatusResponseMessage =
-                        new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                        OTA_ChrgMangDataResp.class)
+                        new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                        OTA_RVMVehicleClassifiedStatusResp25857.class)
                                 .decodeResponse(chargingStatusResponse);
 
-                System.out.println(
-                        toJSON(
-                                anonymized(
-                                        new net.heberling.ismart.asn1.v3_0.MessageCoder<>(
-                                                OTA_ChrgMangDataResp.class),
-                                        chargingStatusResponseMessage)));
+        System.out.println(
+                toJSON(
+                        anonymized(
+                                new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                        OTA_RVMVehicleClassifiedStatusResp25857.class),
+                                chargingStatusResponseMessage)));
+
+        // ... use that to request the data again, until we have it
+        // TODO: check for real errors (result!=0 and/or errorMessagePresent)
+        while (chargingStatusResponseMessage.getApplicationData() == null) {
+
+            fillReserved(chargingStatusMessage.getReserved());
+
+            if (chargingStatusResponseMessage.getBody().getResult() == 0) {
+                // we get an eventId back...
+                chargingStatusMessage
+                        .getBody()
+                        .setEventID(chargingStatusResponseMessage.getBody().getEventID());
+            } else {
+                // try a fresh eventId
+                chargingStatusMessage.getBody().setEventID(0);
             }
+
+            System.out.println(
+                    toJSON(
+                            anonymized(
+                                    otaRvmVehicleClassifiedStatusReqMessageCoder,
+                                    chargingStatusMessage)));
+
+            chargingStatusRequestMessage =
+                    otaRvmVehicleClassifiedStatusReqMessageCoder.encodeRequest(
+                            chargingStatusMessage);
+
+            chargingStatusResponse =
+                    sendRequest(
+                            chargingStatusRequestMessage,
+                            "https://tap-eu.soimt.com/TAP.Web/ota.mpv21");
+
+            chargingStatusResponseMessage =
+                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                    OTA_RVMVehicleClassifiedStatusResp25857.class)
+                            .decodeResponse(chargingStatusResponse);
+
+            System.out.println(
+                    toJSON(
+                            anonymized(
+                                    new net.heberling.ismart.asn1.v2_1.MessageCoder<>(
+                                            OTA_RVMVehicleClassifiedStatusResp25857.class),
+                                    chargingStatusResponseMessage)));
         }
     }
 
@@ -168,13 +367,12 @@ public class GetData {
         return messageCopy;
     }
 
-    private static void fillReserved(
-            net.heberling.ismart.asn1.v3_0.Message<IASN1PreparedElement> chargingStatusMessage) {
+    private static void fillReserved(byte[] reserved) {
         System.arraycopy(
                 ((new Random(System.currentTimeMillis())).nextLong() + "1111111111111111")
                         .getBytes(),
                 0,
-                chargingStatusMessage.getReserved(),
+                reserved,
                 0,
                 16);
     }
