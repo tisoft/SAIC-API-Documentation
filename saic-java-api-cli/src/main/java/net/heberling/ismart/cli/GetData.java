@@ -81,7 +81,7 @@ public class GetData {
             // 5 front, 2, a/c, 0 disable
             // sendACCommand(loginResponseMessage, vin, (byte) 5, (byte) 8);
             // sendACCommand(loginResponseMessage, vin, (byte)0, (byte)0);
-            sendLockCommand(loginResponseMessage, vin, false);
+            sendLockCommand(loginResponseMessage, vin, true);
         }
     }
 
@@ -183,21 +183,33 @@ public class GetData {
                 new net.heberling.ismart.asn1.v2_1.MessageCoder<>(OTA_RVCReq.class);
 
         OTA_RVCReq req = new OTA_RVCReq();
-        req.setRvcReqType(new byte[] {6});
-        List<RvcReqParam> params = new ArrayList<>();
-        req.setRvcParams(params);
-        RvcReqParam param = new RvcReqParam();
-        param.setParamId(19);
-        param.setParamValue(new byte[] {command});
-        params.add(param);
-        param = new RvcReqParam();
-        param.setParamId(20);
-        param.setParamValue(new byte[] {temperature});
-        params.add(param);
-        param = new RvcReqParam();
-        param.setParamId(255);
-        param.setParamValue(new byte[] {0});
-        params.add(param);
+        if(lock){
+            req.setRvcReqType(new byte[]{1});
+        } else {
+            req.setRvcReqType(new byte[]{2});
+            List<RvcReqParam> params = new ArrayList<>();
+            req.setRvcParams(params);
+            RvcReqParam param = new RvcReqParam();
+            param.setParamId(4);
+            param.setParamValue(new byte[]{0});
+            params.add(param);
+            param = new RvcReqParam();
+            param.setParamId(5);
+            param.setParamValue(new byte[]{0});
+            params.add(param);
+            param = new RvcReqParam();
+            param.setParamId(6);
+            param.setParamValue(new byte[]{0});
+            params.add(param);
+            param = new RvcReqParam();
+            param.setParamId(7);
+            param.setParamValue(new byte[]{0x03});
+            params.add(param);
+            param = new RvcReqParam();
+            param.setParamId(255);
+            param.setParamValue(new byte[]{0});
+            params.add(param);
+        }
 
         net.heberling.ismart.asn1.v2_1.Message<OTA_RVCReq> enableACRequest =
                 otaRvcReqMessageCoder.initializeMessage(
