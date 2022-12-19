@@ -2178,6 +2178,19 @@ OTA_RVMVehicleStatusResp25857 ::= SEQUENCE
   basicVehicleStatus RvsBasicStatus25857(1),
   extendedVehicleStatus RvsExtStatus(1) OPTIONAL
 }
+OTA_RVMVehicleClassifiedStatusReq ::= SEQUENCE
+{
+  rvmClassifiedType OCTET STRING(SIZE(1..100)),
+  vehStatusReqType INTEGER(0..255)
+}
+OTA_RVMVehicleClassifiedStatusResp25857 ::= SEQUENCE
+{
+  statusTime INTEGER(0..2147483647),
+  gpsPosition RvsPosition(1) OPTIONAL,
+  rvmParams SEQUENCE SIZE(1..1000) OF RvsStatusParam,
+  basicVehicleStatus RvsBasicStatus25857(1) OPTIONAL,
+  extendedVehicleStatus RvsExtStatus(1) OPTIONAL
+}
 OTA_RVCReq ::= SEQUENCE
 {
   rvcReqType OCTET STRING(SIZE(1)),
@@ -2258,6 +2271,11 @@ RvsBasicStatus25857 ::= SEQUENCE
 RvsExtStatus ::= SEQUENCE
 {
   vehicleAlerts SEQUENCE SIZE(0..64) OF VehicleAlertInfo
+}
+RvsStatusParam ::= SEQUENCE
+{
+  paramId INTEGER(0..65535),
+  paramValue OCTET STRING(SIZE(1..255))
 }
 RvcReqParam ::= SEQUENCE
 {
@@ -3178,6 +3196,7 @@ Error message: The remote control instruction failed, please try again later.
 
 * extendedData1: SOC
 * extendedData2: 0: not charging, 1: charging
+* remoteClimateStatus: 0: off, 2: A/C on, 5: Frontwindow on
 
 :leveloffset: 1
 
