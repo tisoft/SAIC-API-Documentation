@@ -40,7 +40,6 @@
     <jib.goal>dockerBuild</jib.goal>
     <jib.phase>package</jib.phase>
   </properties>
-
   <dependencies>
     <dependency>
       <groupId>info.picocli</groupId>
@@ -81,6 +80,11 @@
       <scope>runtime</scope>
       <optional>true</optional>
     </dependency>
+    <dependency>
+      <groupId>io.github.dschanoeh</groupId>
+      <artifactId>homie-java</artifactId>
+      <version>0.2.0</version>
+    </dependency>
 
     <!-- TODO: generate reflection info statically -->
     <dependency>
@@ -95,6 +99,15 @@
       <version>0.9.12</version>
     </dependency>
   </dependencies>
+  <repositories>
+    <repository>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+      <id>github</id>
+      <url>https://maven.pkg.github.com/dschanoeh/homie-java</url>
+    </repository>
+  </repositories>
   <build>
     <plugins>
       <plugin>
